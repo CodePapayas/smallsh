@@ -62,6 +62,8 @@ bool empty_or_comment(char *tokens[]) {
 // Check for built-in commands
 bool check_built_in(char *tokens[]) {
     if (strcmp(tokens[0], "exit") == 0) {
+        printf("Exiting shell\n");
+        fflush(stdout);
         exit(0);
     }
     else if (strcmp(tokens[0], "cd") == 0) {
@@ -140,14 +142,15 @@ void print_input(char *tokens[]) {
 
 
 int main() {
-    do {
+    while (1) {
         get_input();
-    } while (!empty_or_comment(token_arr));
+    if (!empty_or_comment(token_arr)) {
+        continue;
+    };
     if (!check_built_in(token_arr)) {
         check_background(token_arr);
         check_external(token_arr);
-    }
+    };
     print_input(token_arr);
     fflush(stdout);
-    return 0;
-}
+}}
