@@ -80,6 +80,7 @@ bool check_built_in(char *tokens[]) {
     return false;
 }
 
+// Check for external commands
 void check_external(char *tokens[]) {
     pid_t pid = fork();
     int status;
@@ -110,6 +111,32 @@ void check_external(char *tokens[]) {
                 bg_pid_count++;
                 printf("Background process started: PID %d\n", pid);
                 fflush(stdout);
+        }
+    }
+}
+
+// Adapeted from Exploration: Process API - Monitoring Child Processes CS374
+void cleanup_background() {
+    int i = 0;
+    while (i < bg_pid_count) {
+        int status;
+        pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
+
+        if (result > 0) {
+            printf("Child process %d finished\n", bg_pids_arr[i]);
+
+            if (WIFEXITED(status)) {
+                printf("Child %d exited normally with status %d\n", bg_pids_arr[i], WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                printf("Child %d exited due to signal %d\n", bg_pids_arr[i], WTERMSIG(status));
+            }
+
+            for (int j = i; j < bg_pid_count - 1; j++) {
+                bg_pids_arr[j] = bg_pids_arr[j + 1];
+            }
+            bg_pid_count--;
+        } else {
+            i++;
         }
     }
 }
@@ -151,6 +178,4 @@ int main() {
         check_background(token_arr);
         check_external(token_arr);
     };
-    print_input(token_arr);
-    fflush(stdout);
 }}
