@@ -66,12 +66,13 @@ void check_redirect(char *tokens[]) {
     int i = 0;
 
     while (tokens[i] != NULL) {
+        // Check for empty value; update exit status
         if (strcmp(tokens[i], "<") == 0) {
             if (tokens[i + 1] == NULL) {
                 printf("Error: No input file specified\n");
                 last_exit_status = 1;
                 return;
-            }
+            } // Open file for stdin
             input_fd = open(tokens[i + 1], O_RDONLY);
             if (input_fd == -1) {
                 perror("source open()");
@@ -85,6 +86,7 @@ void check_redirect(char *tokens[]) {
             }
             close(input_fd);
 
+            // Remove redirection tokens from token array
             for (int j = i; tokens[j] != NULL; j++) {
                 tokens[j] = tokens[j + 2];
             }
@@ -96,6 +98,7 @@ void check_redirect(char *tokens[]) {
                 last_exit_status = 1;
                 return;
             }
+            // Open file for stdout
             output_fd = open(tokens[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
             if (output_fd == -1) {
                 perror("target open()");
@@ -165,7 +168,7 @@ void check_external(char *tokens[]) {
         if (!background_mode) { // Foreground execution
             waitpid(pid, &status, 0);
             if (WIFEXITED(status)) {
-                last_exit_status = 1;
+                last_exit_status = WEXITSTATUS(status);
             }
             else if (WIFSIGNALED(status)) {
                 last_exit_status = WTERMSIG(status);
@@ -190,12 +193,10 @@ void cleanup_background() {
         pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
 
         if (result > 0) {
-            printf("Child process %d finished\n", bg_pids_arr[i]);
-
             if (WIFEXITED(status)) {
-                printf("Child %d exited normally with status %d\n", bg_pids_arr[i], WEXITSTATUS(status));
+                printf("Background pid %d is done: Exit value %d\n", bg_pids_arr[i], WEXITSTATUS(status));
             } else if (WIFSIGNALED(status)) {
-                printf("Child %d exited due to signal %d\n", bg_pids_arr[i], WTERMSIG(status));
+                printf("Background pid %d is done: Terminated by signal %d\n", bg_pids_arr[i], WTERMSIG(status));
             }
 
             for (int j = i; j < bg_pid_count - 1; j++) {
@@ -223,19 +224,6 @@ void get_input() {
     tokenize_input(token_arr);
 }
 
-// Print user input
-void print_input(char *tokens[]) {
-    int i = 0;
-    while (tokens[i] != NULL) {
-        printf("%s ", tokens[i]);
-        fflush(stdout);
-        i++;
-    }
-    printf("\n");
-    fflush(stdout);
-}
-
-
 int main() {
     while (1) {
         get_input();
@@ -246,4 +234,6 @@ int main() {
         check_background(token_arr);
         check_external(token_arr);
     };
-}}
+    cleanup_background();
+    }
+}
