@@ -12,12 +12,51 @@
 // Global Variables
 char *user_input = NULL; // User input
 char *token_arr[512]; // Arguments
-pid_t bg_pids_arr[512]; // Array of background process IDs
-size_t buffer = 0; // Buffer size
-bool background_mode = false; // Background process flag
 int bg_pid_count = 0; // Number of background processes
 int i = 0; // Counter
 int last_exit_status = 0; // Exit status of last foreground process
+pid_t bg_pids_arr[512]; // Array of background process IDs
+size_t buffer = 0; // Buffer size
+bool background_mode = false; // Background process flag
+bool foreground_mode = false; // Foreground process flag
+
+// Handle signals
+void handle_SIGTSTP(int signal) {
+    char *message;
+    if (foreground_mode) {
+        message = "\nExiting foreground-only mode\n: ";
+        foreground_mode = false;
+    } else {
+        message = "\nEntering foreground-only mode (& is now ignored)\n: ";
+        foreground_mode = true;
+    }
+    write(STDOUT_FILENO, message, strlen(message));
+}
+
+// Cleanup background processes
+// Adapted from Exploration: Process API - Monitoring Child Processes CS374
+void cleanup_background() {
+    int i = 0;
+    while (i < bg_pid_count) {
+        int status;
+        pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
+
+        if (result > 0) {
+            if (WIFEXITED(status)) {
+                printf("Background pid %d is done: Exit value %d\n", bg_pids_arr[i], WEXITSTATUS(status));
+            } else if (WIFSIGNALED(status)) {
+                printf("Background pid %d is done: Terminated by signal %d\n", bg_pids_arr[i], WTERMSIG(status));
+            }
+
+            for (int j = i; j < bg_pid_count - 1; j++) {
+                bg_pids_arr[j] = bg_pids_arr[j + 1];
+            }
+            bg_pid_count--;
+        } else {
+            i++;
+        }
+    }
+}
 
 // Get user input
 // Adapted from https://opensource.com/article/22/5/safely-read-user-input-getline
@@ -121,14 +160,10 @@ void check_redirect(char *tokens[]) {
     }
 }
 
-
 // Check for built-in commands
 bool check_built_in(char *tokens[]) {
     if (strcmp(tokens[0], "exit") == 0) {
-        while (bg_pid_count > 0) {
-            kill(bg_pids_arr[bg_pid_count - 1], SIGKILL);
-            bg_pid_count--;
-        }
+        cleanup_background();
         printf("Exiting shell\n");
         fflush(stdout);
         exit(0);
@@ -155,56 +190,31 @@ void check_external(char *tokens[]) {
     if (pid == -1) {
         perror("fork");
         exit(1);
-    }
-    else if (pid == 0) { // Child process
-        check_redirect(token_arr);
+    } else if (pid == 0) {  // Child process
+        struct sigaction default_action = {0};
+        default_action.sa_handler = SIG_DFL;
+        sigaction(SIGINT, &default_action, NULL);  // Allow SIGINT in foreground
+        sigaction(SIGTSTP, &default_action, NULL); // Allow SIGTSTP
+
+        check_redirect(tokens);
         if (execvp(tokens[0], tokens) == -1) {
             perror("execvp");
-            last_exit_status = 1;
             exit(1);
         }
-    }
-    else { // Parent process
-        if (!background_mode) { // Foreground execution
+    } else {  // Parent process
+        if (!background_mode || foreground_mode) {  // Foreground execution
             waitpid(pid, &status, 0);
             if (WIFEXITED(status)) {
                 last_exit_status = WEXITSTATUS(status);
-            }
-            else if (WIFSIGNALED(status)) {
-                last_exit_status = WTERMSIG(status);
-                printf("Process %d terminated by signal %d\n", pid, WTERMSIG(status));
-            }
-        }
-        else { // Background execution
-                bg_pids_arr[bg_pid_count] = pid;
-                bg_pid_count++;
-                printf("Background process started: PID %d\n", pid);
-                fflush(stdout);
-        }
-    }
-}
-
-// Cleanup background processes
-// Adapted from Exploration: Process API - Monitoring Child Processes CS374
-void cleanup_background() {
-    int i = 0;
-    while (i < bg_pid_count) {
-        int status;
-        pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
-
-        if (result > 0) {
-            if (WIFEXITED(status)) {
-                printf("Background pid %d is done: Exit value %d\n", bg_pids_arr[i], WEXITSTATUS(status));
             } else if (WIFSIGNALED(status)) {
-                printf("Background pid %d is done: Terminated by signal %d\n", bg_pids_arr[i], WTERMSIG(status));
+                last_exit_status = WTERMSIG(status);
+                printf("Process %d terminated by signal %d\n", pid, last_exit_status);
             }
-
-            for (int j = i; j < bg_pid_count - 1; j++) {
-                bg_pids_arr[j] = bg_pids_arr[j + 1];
-            }
-            bg_pid_count--;
-        } else {
-            i++;
+        } else {  // Background execution
+            bg_pids_arr[bg_pid_count] = pid;
+            bg_pid_count++;
+            printf("Background process started: PID %d\n", pid);
+            fflush(stdout);
         }
     }
 }
@@ -224,16 +234,44 @@ void get_input() {
     tokenize_input(token_arr);
 }
 
+// Strip ampersand from token array if at the end
+void strip_ampersand(char *tokens[]) {
+    int count = 0;
+    while (tokens[count] != NULL) {
+        count++;
+    }
+    if (count > 0 && strcmp(tokens[count - 1], "&") == 0) {
+        tokens[count - 1] = NULL;
+    }
+}
+
+
 int main() {
+    struct sigaction SIGTSTP_action = {0}, SIGINT_action = {0};
+    // Handle SIGINT in shell (ignore it)
+    SIGINT_action.sa_handler = SIG_IGN;
+    sigaction(SIGINT, &SIGINT_action, NULL);
+
+    // Handle SIGTSTP in shell
+    SIGTSTP_action.sa_handler = handle_SIGTSTP;
+    sigfillset(&SIGTSTP_action.sa_mask);
+    SIGTSTP_action.sa_flags = SA_RESTART;
+    sigaction(SIGTSTP, &SIGTSTP_action, NULL);
+
     while (1) {
         get_input();
     if (!empty_or_comment(token_arr)) {
         continue;
-    };
+    }
     if (!check_built_in(token_arr)) {
-        check_background(token_arr);
-        check_external(token_arr);
+        cleanup_background();
+        continue;
     };
+    check_background(token_arr);
+    if (foreground_mode) {
+        strip_ampersand(token_arr);
+    }
+    check_external(token_arr);
     cleanup_background();
     }
 }
