@@ -36,33 +36,21 @@ void handle_SIGTSTP(int signal) {
 // Cleanup background processes
 // Adapted from Exploration: Process API - Monitoring Child Processes CS374
 void cleanup_background() {
-    int i = 0;
-    while (i < bg_pid_count) {
-        int status;
-        pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
-        if (result > 0) {
-            char *message;
+    int status;
+    for (int i = 0; i < bg_pid_count; i++) {
+        if (waitpid(bg_pids_arr[i], &status, WNOHANG) > 0) {
             if (WIFEXITED(status)) {
-                message = "Background pid is done: Exit value\n";
+                printf("Background process %d exited with status %d\n", bg_pids_arr[i], WEXITSTATUS(status));
             } else if (WIFSIGNALED(status)) {
-                message = "Background pid is done: Terminated by signal\n";
-            } else {
-                i++;
-                continue;
+                printf("Background process %d terminated by signal %d\n", bg_pids_arr[i], WTERMSIG(status));
             }
-            write(STDOUT_FILENO, message, strlen(message));
-
-            // Remove completed PID from array
-            for (int j = i; j < bg_pid_count - 1; j++) {
+            for (int j = i; j < bg_pid_count; j++) {
                 bg_pids_arr[j] = bg_pids_arr[j + 1];
             }
             bg_pid_count--;
-        } else {
-            i++;
         }
     }
 }
-
 
 // Get user input
 // Adapted from https://opensource.com/article/22/5/safely-read-user-input-getline
@@ -181,10 +169,16 @@ bool check_built_in(char *tokens[]) {
         }
         return true;
     }
+    // Check if terminated by signal or exit status
     else if (strcmp(tokens[0], "status") == 0) {
-        printf("Exit status: %d\n", last_exit_status);
+        if (last_exit_status >= 0) {
+            printf("exit value %d\n", last_exit_status);
+        } else {
+            printf("terminated by signal %d\n", -last_exit_status);
+        }
+        fflush(stdout);
         return true;
-    }
+    }    
     return false;
 }
 
@@ -212,14 +206,17 @@ void check_external(char *tokens[]) {
             waitpid(pid, &status, 0);
             if (WIFEXITED(status)) {
                 last_exit_status = WEXITSTATUS(status);
+            // Store signal as a negative for terminated processes
+            // Allows us to tell the difference between exit status and signal
             } else if (WIFSIGNALED(status)) {
-                last_exit_status = WTERMSIG(status);
-                printf("Process %d terminated by signal %d\n", pid, last_exit_status);
+                last_exit_status = -WTERMSIG(status);
+                printf("terminated by signal %d\n", -last_exit_status);
+                fflush(stdout);
             }
         } else {  // Background execution
             bg_pids_arr[bg_pid_count] = pid;
             bg_pid_count++;
-            printf("Background process started: PID %d\n", pid);
+            printf("background pid is %d\n", pid);
             fflush(stdout);
         }
     }
