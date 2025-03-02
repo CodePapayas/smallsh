@@ -264,14 +264,10 @@ int main() {
         continue;
     }
     if (!check_built_in(token_arr)) {
-        cleanup_background();
-        continue;
-    };
-    check_background(token_arr);
-    if (foreground_mode) {
-        strip_ampersand(token_arr);
+        check_background(token_arr);
+        check_external(token_arr);
     }
-    check_external(token_arr);
     cleanup_background();
     }
+    return 0;
 }
