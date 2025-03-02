@@ -40,14 +40,19 @@ void cleanup_background() {
     while (i < bg_pid_count) {
         int status;
         pid_t result = waitpid(bg_pids_arr[i], &status, WNOHANG);
-
         if (result > 0) {
+            char *message;
             if (WIFEXITED(status)) {
-                printf("Background pid %d is done: Exit value %d\n", bg_pids_arr[i], WEXITSTATUS(status));
+                message = "Background pid is done: Exit value\n";
             } else if (WIFSIGNALED(status)) {
-                printf("Background pid %d is done: Terminated by signal %d\n", bg_pids_arr[i], WTERMSIG(status));
+                message = "Background pid is done: Terminated by signal\n";
+            } else {
+                i++;
+                continue;
             }
+            write(STDOUT_FILENO, message, strlen(message));
 
+            // Remove completed PID from array
             for (int j = i; j < bg_pid_count - 1; j++) {
                 bg_pids_arr[j] = bg_pids_arr[j + 1];
             }
@@ -57,6 +62,7 @@ void cleanup_background() {
         }
     }
 }
+
 
 // Get user input
 // Adapted from https://opensource.com/article/22/5/safely-read-user-input-getline
