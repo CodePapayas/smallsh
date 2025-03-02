@@ -1,3 +1,10 @@
+/*
+ * Zachary Wilkins-Olson
+ * CS374
+ * Assignment 4: Smallsh
+ * 3/2/2025
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -228,12 +235,12 @@ void get_input() {
     fflush(stdout);
     size_t input_ln = getline(&user_input, &buffer, stdin);
 
+    // Check that input has valid length
     if (input_ln > 2048 || input_ln < 0) {
         printf("Error: Invalid input\n");
         fflush(stdout);
         exit(1);
     }
-
     tokenize_input(token_arr);
 }
 
@@ -250,6 +257,7 @@ void strip_ampersand(char *tokens[]) {
 
 
 int main() {
+    // Build struct for signal handling
     struct sigaction SIGTSTP_action = {0}, SIGINT_action = {0};
     // Handle SIGINT in shell (ignore it)
     SIGINT_action.sa_handler = SIG_IGN;
@@ -261,7 +269,9 @@ int main() {
     SIGTSTP_action.sa_flags = SA_RESTART;
     sigaction(SIGTSTP, &SIGTSTP_action, NULL);
 
+    // Main loop
     while (1) {
+        cleanup_background();
         get_input();
     if (!empty_or_comment(token_arr)) {
         continue;
@@ -270,7 +280,6 @@ int main() {
         check_background(token_arr);
         check_external(token_arr);
     }
-    cleanup_background();
     }
     return 0;
 }
